@@ -4,6 +4,12 @@
 #include "gatt.h"
 #include "nimble_stack.h"
 #include "esp_log.h"
+#include "mqtt_client_ble.h"
+#include "mqtt_init_ble.h"
+#include "nvs_ble.h"
+#include "server_ble.h"
+#include "udp_server.h"
+#include "wifi_ble.h"
 
 #define TAG "BLE_APP"
 
@@ -23,4 +29,11 @@ void app_main(void) {
     xTaskCreate(nimble_host_task, "NimBLE Host", 4 * 1024, NULL, 5, NULL);
     
     start_scanning();
+    wifi_init_sta();
+    start_webserver();
+    start_udp_server();
+    // vTaskDelay(1000 / portTICK_PERIOD_MS);
+    mqtt_start();
+    initialize_mqtt_client();
+
 }

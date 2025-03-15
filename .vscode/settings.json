@@ -1,0 +1,9 @@
+{
+    "idf.flashType": "UART",
+    "idf.portWin": "COM6",
+    "files.associations": {
+        "wifi_ble.h": "c",
+        "common.h": "c",
+        "mqtt_init_ble.h": "c"
+    }
+}
