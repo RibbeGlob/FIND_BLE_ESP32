@@ -10,5 +10,4 @@
 
 void adv_init(void);
 int gap_init(void);
-void start_scanning(void);
 #endif

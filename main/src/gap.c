@@ -3,10 +3,13 @@
 #include "gpio.h"
 
 #define TAG "GAP"
+
 inline static void format_addr(char *addr_str, uint8_t addr[]);
 static void print_conn_desc(struct ble_gap_conn_desc *desc);
 static void start_advertising(void);
 static int gap_event_handler(struct ble_gap_event *event, void *arg);
+static void start_scanning(void);
+static void scan_task(void *param);
 
 static uint8_t own_addr_type;
 static uint8_t addr_val[6] = {0};
@@ -189,6 +192,7 @@ void adv_init(void) {
     ESP_LOGI(TAG, "device address: %s", addr_str);
 
     start_advertising();
+    xTaskCreate(scan_task, "BLE Scan Task", 4096, NULL, 5, NULL);
 }
 
 int gap_init(void) {
@@ -211,94 +215,34 @@ int gap_init(void) {
     return rc;
 }
 
-static void ble_hs_adv_parse_name(const uint8_t *adv_data, uint8_t adv_data_len, 
-                                  char *device_name, size_t device_name_max_len) {
-    uint8_t field_len;
-    uint8_t field_type;
-
-    while (adv_data_len > 0) {
-        field_len = adv_data[0];
-        if (field_len == 0 || field_len > adv_data_len) {
-            break;
-        }
-        field_type = adv_data[1];
-
-        if (field_type == 0x09 || field_type == 0x08) {
-            size_t name_len = field_len - 1;
-            if (name_len >= device_name_max_len) {
-                name_len = device_name_max_len - 1;
-            }
-            memcpy(device_name, &adv_data[2], name_len);
-            device_name[name_len] = '\0';
-            return;
-        }
-
-        adv_data_len -= field_len + 1;
-        adv_data += field_len + 1;
-    }
-
-    device_name[0] = '\0';
+static void scan_task(void *param) {
+    ESP_LOGI(TAG, "Starting BLE scan...");
+    start_scanning();
+    vTaskDelete(NULL);
 }
 
-
 static int scan_event_handler(struct ble_gap_event *event, void *arg) {
-    struct ble_gap_disc_desc *desc;
-    char addr_str[18] = {0};
-    uint8_t adv_data_len;
-    const uint8_t *adv_data;
-    char device_name[32] = {0};
-
-    switch (event->type) {
-    case BLE_GAP_EVENT_DISC:
-        desc = &event->disc;
-        format_addr(addr_str, desc->addr.val);
-
-        adv_data = desc->data;
-        adv_data_len = desc->length_data;
-
-        ble_hs_adv_parse_name(adv_data, adv_data_len, device_name, sizeof(device_name));
-
-        if (device_name[0] != '\0') {
-            ESP_LOGI(TAG, "Discovered device with name: %s", device_name);
-            ESP_LOGI(TAG, "Address: %s", addr_str);
-            ESP_LOGI(TAG, "RSSI: %d", desc->rssi);
-
-            ESP_LOGI(TAG, "Advertisement data:");
-            for (int i = 0; i < adv_data_len; i++) {
-                ESP_LOGI(TAG, "0x%02X ", adv_data[i]);
-            }
-
-            ESP_LOGI(TAG, "Advertisement type: %d", desc->addr.type);
-            ESP_LOGI(TAG, "Advertisement address type: %d", desc->addr.type);
-            ESP_LOGI(TAG, "Advertisement length: %d", desc->length_data);
-        } 
-        break;
-
-    case BLE_GAP_EVENT_DISC_COMPLETE:
-        ESP_LOGI(TAG, "Scan complete.");
-        break;
-
-    default:
-        break;
+    if (event->type == BLE_GAP_EVENT_DISC) {
+        char addr_str[18] = {0};
+        format_addr(addr_str, event->disc.addr.val);
+        ESP_LOGI(TAG, "Found device: %s, RSSI: %d", addr_str, event->disc.rssi);
     }
     return 0;
 }
 
-
-void start_scanning(void) {
-
+static void start_scanning(void) {
     struct ble_gap_disc_params scan_params = {
-        .passive = 0,
-        .filter_duplicates = 0,
-        .itvl = BLE_GAP_ADV_ITVL_MS(100), // Interwał
-        .window = BLE_GAP_ADV_ITVL_MS(50), // Okno skanowania
+        .itvl = BLE_GAP_SCAN_ITVL_MS(100),
+        .window = BLE_GAP_SCAN_WIN_MS(50),
+        .filter_policy = BLE_HCI_SCAN_FILT_NO_WL,
         .limited = 0,
+        .passive = 0
     };
 
     int rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &scan_params, scan_event_handler, NULL);
     if (rc != 0) {
         ESP_LOGE(TAG, "Failed to start scanning, error code: %d", rc);
-        return;
+    } else {
+        ESP_LOGI(TAG, "Scanning started.");
     }
-    ESP_LOGI(TAG, "Scanning started.");
 }
